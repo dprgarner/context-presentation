@@ -1,0 +1,348 @@
+<!doctype html>
+<html>
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <title>React Context</title>
+
+  <link rel="stylesheet" href="reveal.js/css/reveal.css">
+  <link rel="stylesheet" href="reveal.js/css/theme/black.css">
+
+  <!-- Theme used for syntax highlighting of code -->
+  <link rel="stylesheet" href="reveal.js/lib/css/zenburn.css">
+
+  <!-- Printing and PDF exports -->
+  <script>
+    var link = document.createElement( 'link' );
+    link.rel = 'stylesheet';
+    link.type = 'text/css';
+    link.href = window.location.search.match( /print-pdf/gi ) ? 'reveal.js/css/print/pdf.css' : 'reveal.js/css/print/paper.css';
+    document.getElementsByTagName( 'head' )[0].appendChild( link );
+  </script>
+
+  <style>
+    .reveal pre code.javascript {
+      max-height: inherit;
+    }
+  </style>
+  </head>
+  <body>
+  <div class="reveal">
+  <div class="slides">
+  <section data-markdown>
+## React Context and Common Patterns
+
+#### Friday 23rd February 2018
+  </section>
+
+  <section data-markdown>
+## Overview
+1. Context: The existing API
+2. Higher-order components (HOCs)
+3. Render props
+4. Context: The upcoming API
+  </section>
+
+  <section data-markdown>
+## React: Recap
+
+- Information is passed down via *props*
+- Internal information is stored in *state*
+- Stateful components are classes
+- Stateless, *functional* components can be specified as a class or a function
+
+```jsx
+class MyComponent extends React.Component {
+  render() {
+    return (
+      &lt;div&gt;Hello {this.props.name}!&lt;/div&gt;
+    );
+  }
+}
+```
+
+```jsx
+const MyComponent = (props) =&gt; &lt;div&gt;Hello {props.name}!&lt;/div&gt;;
+```
+  </section>
+
+  <section data-markdown>
+## Context: the Existing API
+
+- Without context, props need to be passed through several components which do not use them
+- With context, data can be made available to any component further down the component tree
+- The available context is set with *getChildContext*
+- Components with *contextTypes* can use the specified context
+  </section>
+
+  <section>
+  <section data-markdown>
+##### Without context: Passing props down
+```jsx
+const A = ({ myProp }) => &lt;B myProp={myProp} /&gt;
+const B = ({ myProp }) =&gt; &lt;C myProp={myProp} /&gt;
+const C = ({ myProp }) =&gt; &lt;D myProp={myProp} /&gt;
+const D = ({ myProp }) =&gt; myProp;
+
+render(&lt;A myProp="Dr. D" /&gt;, document.getElementById("root"));  // Dr. D
+```
+  </section>
+  <section data-markdown>
+##### With context
+
+```jsx
+class A extends React.Component {
+  getChildContext() {
+    return { myContext: this.props.myProp };
+  }
+  render() {
+    return &lt;B /&gt;
+  }
+}
+A.childContextTypes = { myContext: PropTypes.string }
+const B = () =&gt; &lt;C /&gt;;
+const C = () =&gt; &lt;D /&gt;;
+const D = (_props, context) =&gt; context.myContext;
+D.contextTypes = { myContext: PropTypes.string };
+
+render(&lt;A myProp="Dr. D" /&gt;, document.getElementById("root"));  // Dr. D
+```
+  </section>
+  </section>
+
+  <section data-markdown>
+## Issues
+- No built-in way to tell the components consuming context that the context has been updated https://codesandbox.io/s/6jk6ppo58w
+- API is considered experimental and likely to change (and indeed it is changing)
+
+As a result, some common patterns are used to abstract away using context directly
+  </section>
+
+  <section data-markdown>
+## Higher-order Components (HOCs)
+- A functional component can be thought of as a function which takes in props and outputs a React node (element, string, number, etc.)
+- A *higher-order component* is a function which takes in a component and returns a new component with some extra behaviour
+- Analogous to Python decorators (when wrapping functional components)
+```jsx
+const EnhancedComponent = higherOrderComponent(WrappedComponent);
+```
+  </section>
+
+  <section>
+    <section data-markdown>
+## Uses of Higher-order Components
+
+- Code reuse for patterns which can't easily be componentised
+- Abstract out patterns which take data from the context
+- Examples: withUrls in our codebase, withTranslate on Consumerdata and PI
+    </section>
+
+    <section data-markdown>
+### Fetch data on mount
+```jsx
+const withGistsHoc = (WrappedComponent) =>
+  class WithGistsComponent extends React.Component {
+    state = { gists: [] }
+
+    componentDidMount() {
+      fetch("https://api.github.com/gists/public")
+      .then((r) => r.json())
+      .then((gists) => this.setState({ gists }));
+    }
+
+    render = () => (
+     &lt;WrappedComponent {...this.props} gists={this.state.gists} /&gt;
+    )
+  }
+}
+
+const Gists = ({ gists }) => (
+  <pre>{JSON.stringify(gists, null, 2)}</pre>
+)
+
+const GistsFromRequest = withGistsHoc(Gists)
+
+render(&lt;GistsFromRequest /&gt;, document.getElementById("root"));  // A list of Gists
+```
+    </section>
+
+    <section data-markdown>
+### Providing context to the wrapped component
+```jsx
+export const withUrls = InnerComponent =&gt; {
+    const WrappedComponent = (props, context) =&gt; (
+      &lt;InnerComponent {...props} urls={context.urls} /&gt;
+    );
+
+    WrappedComponent.contextTypes = {
+      urls: PropTypes.objectOf(
+        PropTypes.objectOf(PropTypes.string)
+      ),
+    };
+
+    return WrappedComponent;
+};
+
+const ShowUrls = ({ urls }) =&gt; &lt;pre&gt;{JSON.stringify(urls, null, 2)}&lt;/pre&gt;;
+const ShowUrlsFromContext = withUrls(ShowUrls);
+```
+    </section>
+
+    <section data-markdown>
+### Context providers (not an HOC, but frequently used with them)
+```jsx
+class UrlsProvider extends Component {
+  getChildContext = () => ({
+    api1: '/api1',
+    api2: '/api2',
+  })
+
+  render() {
+    return React.Children.only(this.props.children);
+  }
+}
+
+UrlsProvider.childContextTypes = {
+  urls: PropTypes.objectOf(PropTypes.string),
+};
+
+// Using the wrapped component from the previous slide
+render(
+  &lt;UrlsProvider&gt;
+    &lt;ShowUrlsFromContext /&gt;
+  &lt;/UrlsProvider&gt;,
+  document.getElementById("root"),
+);
+```
+    </section>
+
+    <section data-markdown>
+### Providing context with Redux
+```jsx
+const MyComponent = ({ myProp }) =&gt; (
+  &lt;div&gt;{myProp}&lt;/div&gt;
+);
+
+const reduxHOC = connect(mapStateToProps, mapDispatchToProps);
+const MyContainer = reduxHOC(MyComponent);  // Retrieves store from the context
+```
+    </section>
+  </section>
+
+  <section>
+    <section data-markdown>
+## Render props
+
+- An alternative pattern to HOCs
+- A provider component takes in a function as a prop, which returns a React element
+- Can be used to separate data-fetching from display logic
+    </section>
+
+    <section data-markdown>
+```jsx
+class WithGists extends React.Component {
+  state = { gists: [] }
+
+  componentDidMount() {
+    fetch("https://api.github.com/gists/public")
+    .then((r) =&gt; r.json())
+    .then((gists) =&gt; this.setState({ gists }));
+  }
+
+  render = () =&gt; (
+    this.props.render(this.state.gists);
+  )
+}
+
+const GistsFromRequest = &lt;WithGists
+  render={(gists) =&gt; (&lt;pre&gt;{JSON.stringify(gists, null, 2)}&lt;/pre&gt;)}
+/>
+
+render(&lt;GistsFromRequest /&gt;, document.getElementById("root"));  // A list of Gists
+```
+    </section>
+  </section>
+
+  <section data-markdown>
+## Function-as-child
+
+- Special case of render props, where the render prop function is the `children` prop of the provider component
+- Used by the React Transition Group and React Responsive libraries
+```jsx
+&lt;MediaQuery minDeviceWidth={700}&gt;
+    {(matches) =&gt; {
+      if (matches) {
+        return &lt;div&gt;Media query matches!&lt;/div&gt;;
+      } else {
+        return &lt;div&gt;Media query does not match!&lt;/div&gt;;
+      }
+    }}
+&lt;/MediaQuery&gt;
+```
+  </section>
+  <section>
+    <section data-markdown>
+## The new context API
+
+- Formalises the common provider/consumer pattern for a single item of context
+- Created with the in-built function `React.createContext`
+- Uses function-as-child pattern in the consumer
+- Due in React 16.3 (currently in alpha)
+- Propagates through shouldComponentUpdate -> false
+    </section>
+    <section data-markdown>
+```jsx
+const ThemeContext = React.createContext('light');
+
+class ThemeProvider extends React.Component {
+  state = { theme: 'light' }
+
+  render = () =&gt; (
+    &lt;ThemeContext.Provider value={this.state.theme}&gt;
+      {this.props.children}
+    &lt;/ThemeContext.Provider&gt;
+  )
+}
+
+const App = () =&gt; (
+  &lt;ThemeProvider&gt;
+    &lt;ThemeContext.Consumer&gt;
+      {val =&gt; &lt;div&gt;{val}&lt;/div&gt;}
+    &lt;/ThemeContext.Consumer&gt;
+  &lt;/ThemeProvider&gt;
+);
+```
+    </section>
+  </section>
+
+  </div>
+  </div>
+
+  <script src="reveal.js/lib/js/head.min.js"></script>
+  <script src="reveal.js/js/reveal.js"></script>
+
+  <script>
+  // More info about config & dependencies:
+  // - https://github.com/hakimel/reveal.js#configuration
+  // - https://github.com/hakimel/reveal.js#dependencies
+  Reveal.initialize({
+    controls: true,
+    progress: true,
+    history: true,
+    center: true,
+
+    width: '100%',
+
+    transition: 'fade', // none/fade/slide/convex/concave/zoom
+
+    dependencies: [
+    { src: 'reveal.js/plugin/markdown/marked.js' },
+    { src: 'reveal.js/plugin/markdown/markdown.js' },
+    { src: 'reveal.js/plugin/notes/notes.js', async: true },
+    { src: 'reveal.js/plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+    ]
+    });
+  </script>
+  </body>
+</html>
