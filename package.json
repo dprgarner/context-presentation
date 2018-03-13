@@ -1,0 +1,14 @@
+{
+  "name": "context-presentation",
+  "version": "0.0.1",
+  "main": "index.js",
+  "repository": "https://github.com/dprgarner/context-presentation.git",
+  "author": "<dgarner@mintel.com>",
+  "license": "MIT",
+  "dependencies": {
+    "http-server": "^0.11.1"
+  },
+  "scripts": {
+    "start": "http-server -p3000"
+  }
+}
